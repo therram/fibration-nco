@@ -1,10 +1,15 @@
 #pragma once
 
-#include "ioStream.hpp"
-#include "stringContainer.hpp"
+#include "asciiStreamIF.hpp"
+
 #include <string_view>
 #include <cstdarg>
-#include <functional>
+
+#define FIB_SHELL_ENABLED 1
+
+#if FIB_SHELL_ENABLED
+#include "shell.hpp"
+#endif // #if FIB_SHELL_ENABLED
 class Logger
 {
 public:
@@ -28,48 +33,49 @@ public:
         _enumTypeSize
     };
 
-    // CONFIGURATION
-    /* log messages will be fairly fast up to this length */
-    static constexpr std::size_t optimalLogStringLength = 128;
-    /* if log message turns out to be longer than this (@run-time), error will be printed out */
-    static constexpr std::size_t maxLogStringLength = 1024;
-    /* logger can be disabled here at @compile-time (hopefully optimized out @compile-time) */
-    static constexpr bool isEnabledCompileTime = true;
-    /* lower verbosity level log entries will be optimized out @compile-time */
-    static constexpr Verbosity verbosityFloor = Verbosity::low;
+    struct Config
+    {
+        /* log messages will be fairly fast up to this length */
+        static constexpr std::size_t optimalLogStringLength = 128;
+        /* if log message turns out to be longer than this (@run-time), error will be printed out */
+        static constexpr std::size_t maxLogStringLength = 1024;
+        /* logger can be disabled here at @compile-time (hopefully optimized out @compile-time) */
+        static constexpr bool isEnabledCompileTime = true;
+        /* lower verbosity level log entries will be optimized out @compile-time */
+        static constexpr Verbosity verbosityFloor = Verbosity::low;
 
-    // SETUP
-    static bool setIoStream(IOStream &ioStream);
-    static void setColoring(bool state);
-    static bool isActive();
+        bool logging = true;
+        bool color = true;
+        bool prefix = true;
+    };
 
-    static void setEnable(bool state);
-    // USAGE (note: user is responsible for putting '\n' end line)
-    static bool log(const Verbosity &verbosity, const Type &type, const std::string_view fmt, ...);
-    static bool log(const Verbosity &verbosity, const Type &type, const std::string_view fmt, const va_list &arglist);
-    static bool log(const std::string_view fmt, ...);
-    static bool logFast(const std::string_view string);
-    static bool logFastFromISR(const std::string_view string);
+    /**
+     * @brief @attention user is responsible for putting '\n' end line
+     */
 
-protected:
-private:
+    static void log(const std::string_view fmt, ...);
+    static void log(const Verbosity &verbosity, const Type &type, const std::string_view fmt, ...);
+    static void log(const Verbosity &verbosity, const Type &type, const std::string_view fmt, const va_list &argList);
+
     static Logger &getInstance();
 
+    bool isActive();
+    static bool setAsciiStream(AsciiStream &asciiStream);
+    const Config &checkConfig();
+    Config &modifyConfig();
+
+protected:
+    Config config;
+
+private:
     Logger(Logger const &) = delete;
     void operator=(Logger const &) = delete;
-    Logger();
-    ~Logger();
+    Logger() = default;
+    ~Logger() = default;
 
-    bool logFormatted(const Verbosity &verbosity, const Type &type, const std::string_view fmt, const va_list &arglist);
-    bool printOptimallyInto(StringContainer &stringContainer,
-                            std::function<int(StringContainer &logString)> printF,
-                            std::function<void(StringContainer &logString)> optimalPrintFailedCallbackF);
-    int formatPrefix(const Type &type, char *pOut, const std::size_t &maxSize);
-    void logOutOfMem();
-    void logStringTooLong();
+    int logf(const Logger::Verbosity &verbosity, const Logger::Type &type, const std::string_view fmt, const va_list &argList);
 
-    bool logColored = true;
+    int printPrefix(const Type &type);
 
-    IOStream *pIoStream = nullptr;
-    bool isEnabled = true;
+    AsciiStream *pAsciiStream = nullptr;
 };

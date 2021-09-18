@@ -104,16 +104,19 @@ std::uint32_t FibSys::getUptimeInMs()
     return cpp_freertos::Ticks::TicksToMs(FibSys::getSysTick());
 }
 
-void FibSys::getUptime(std::uint32_t &hours, std::uint32_t &minutes, std::uint32_t &seconds, std::uint32_t &milliseconds)
+void FibSys::getUptime(std::uint32_t &days, std::uint32_t &hours, std::uint32_t &minutes, std::uint32_t &seconds, std::uint32_t &milliseconds)
 {
     std::uint32_t uptimeInMs = getUptimeInMs();
     std::uint32_t secondsTotal = uptimeInMs / 1000;
     std::uint32_t minutesTotal = secondsTotal / 60;
+    std::uint32_t hoursTotal = minutesTotal / 60;
+    std::uint32_t daysTotal = hoursTotal / 24;
 
     milliseconds = uptimeInMs % 1000;
     seconds = secondsTotal % 60;
     minutes = minutesTotal % 60;
-    hours = minutesTotal / 60;
+    hours = hoursTotal % 24;
+    days = daysTotal;
 }
 
 void FibSys::panic()
@@ -162,12 +165,15 @@ void FibSys::Run()
 {
     static IOStream ioStreamUart2(Periph::getUart2());
     static AsciiStream textStreamUart2(ioStreamUart2);
-    if (false == Logger::setIoStream(ioStreamUart2))
+    if (false == Logger::setAsciiStream(textStreamUart2))
     {
         FibSys::panic();
     }
-    textStreamUart2.printf("\r\nFibration v%u.%u.%u\r\n", Fib::Version::major, Fib::Version::minor, Fib::Version::patch);
+    Logger::log(Logger::Verbosity::high, Logger::Type::system, "Fibration %s v%u.%u.%u\n", Fib::Version::moduleName, Fib::Version::major, Fib::Version::minor, Fib::Version::patch);
     Shell::start(textStreamUart2, 0x200, FibSys::Priority::appHigh);
+
+    Periph::getAdc2().init();
+    Periph::getAdc2().start();
 
     while (true)
     {

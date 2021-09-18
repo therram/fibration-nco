@@ -15,7 +15,7 @@ set(STM32F3xx_CORE_SRC
     ${ROOT}/System/MSP/stm32f3xx_hal_msp.c
     ${ROOT}/System/MSP/stm32f3xx_hal_timebase_tim.c
     ${ROOT}/System/MSP/stm32f3xx_it.c
-    ${ROOT}/System/MSP/syscalls.c
+    ${ROOT}/System/MSP/syscalls.cpp
     ${ROOT}/System/MSP/sysmem.c
     ${ROOT}/System/MSP/system_stm32f3xx.c
 )
@@ -106,7 +106,11 @@ set(FIBSYS_CORE_SRC
     ${ROOT}/System/Core/Commands/reset.cpp
     ${ROOT}/System/Core/Commands/status.cpp
     ${ROOT}/System/Core/Commands/repeat.cpp
+    ${ROOT}/System/Core/Commands/donut.cpp
 )
+
+set(FIBSYS_DSP_SRC
+    ${ROOT}/System/DSP/map.cpp
 )
 
 set(FIBSYS_UTILITIES_SRC
@@ -123,11 +127,12 @@ set(FIBSYS_PERIPHERALS_SRC
     # Peripherals Implementations - wrappers for limited resources that are available on the platform
     ${ROOT}/System/Peripherals/STM32F303R/gpio.cpp
     ${ROOT}/System/Peripherals/STM32F303R/tim6.cpp
-    ${ROOT}/System/Peripherals/STM32F303R/uartIsrHandler.cpp
+    ${ROOT}/System/Peripherals/STM32F303R/uartIsr.cpp
     ${ROOT}/System/Peripherals/STM32F303R/uart2.cpp
     ${ROOT}/System/Peripherals/STM32F303R/uart3.cpp
-    ${ROOT}/System/Peripherals/STM32F303R/i2sIsrHandler.cpp
+    ${ROOT}/System/Peripherals/STM32F303R/i2sIsr.cpp
     ${ROOT}/System/Peripherals/STM32F303R/i2s2.cpp
+    ${ROOT}/System/Peripherals/STM32F303R/adcIsr.cpp
     ${ROOT}/System/Peripherals/STM32F303R/adc2.cpp
 
     ${ROOT}/System/Peripherals/resources.cpp
@@ -157,6 +162,7 @@ set(FIBSYS_COMPONENTS_SRC
 set(FIBSYS_SRC
     ${FIBSYS_CORE_SRC}
     ${FIBSYS_UTILITIES_SRC}
+    ${FIBSYS_DSP_SRC}
     ${FIBSYS_PERIPHERALS_SRC}
     ${FIBSYS_STREAMS_SRC}
     ${FIBSYS_COMPONENTS_SRC}
@@ -189,6 +195,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
     # Fibration Framework
     ${ROOT}/System/
+    ${ROOT}/System/DSP
     ${ROOT}/System/Config/
     ${ROOT}/System/Core/
     ${ROOT}/System/Utilities/

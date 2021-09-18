@@ -6,93 +6,34 @@
 #include <cstdio>
 #include <cstdarg>
 
-bool Logger::setIoStream(IOStream &ioStream)
+void Logger::log(const std::string_view fmt, ...)
 {
-    bool result = true;
-
-    if (Logger::getInstance().pIoStream)
+    if (Logger::getInstance().Logger::isActive())
     {
-        Logger::getInstance().pIoStream->deinit();
+        va_list argList;
+        va_start(argList, fmt);
+        Logger::getInstance().logf(Logger::Verbosity::high, Type::none, fmt, argList);
+        va_end(argList);
     }
-
-    Logger::getInstance().pIoStream = &ioStream;
-    result = Logger::getInstance().pIoStream->init();
-
-    return result;
 }
 
-void Logger::setColoring(bool state)
+void Logger::log(const Logger::Verbosity &verbosity, const Type &type, const std::string_view fmt, ...)
 {
-    Logger::getInstance().logColored = state;
-}
-
-bool Logger::isActive()
-{
-    return (Logger::isEnabledCompileTime && Logger::getInstance().isEnabled && Logger::getInstance().pIoStream);
-}
-
-void Logger::setEnable(bool state)
-{
-    Logger::getInstance().isEnabled = state;
-}
-
-bool Logger::log(const std::string_view fmt, ...)
-{
-    bool result = false;
-
-    if (Logger::isActive())
+    if (Logger::getInstance().Logger::isActive())
     {
-        va_list arglist;
-        va_start(arglist, fmt);
-        result = Logger::getInstance().logFormatted(Logger::Verbosity::high, Type::none, fmt, arglist);
-        va_end(arglist);
+        va_list argList;
+        va_start(argList, fmt);
+        Logger::getInstance().logf(verbosity, type, fmt, argList);
+        va_end(argList);
     }
-
-    return result;
 }
 
-bool Logger::log(const Logger::Verbosity &verbosity, const Type &type, const std::string_view fmt, ...)
+void Logger::log(const Logger::Verbosity &verbosity, const Type &type, const std::string_view fmt, const va_list &argList)
 {
-    bool result = false;
-
-    if (Logger::isActive())
+    if (Logger::getInstance().Logger::isActive())
     {
-        va_list arglist;
-        va_start(arglist, fmt);
-        result = Logger::getInstance().logFormatted(verbosity, type, fmt, arglist);
-        va_end(arglist);
+        Logger::getInstance().logf(verbosity, type, fmt, argList);
     }
-
-    return result;
-}
-
-bool Logger::log(const Logger::Verbosity &verbosity, const Type &type, const std::string_view fmt, const va_list &arglist)
-{
-    return Logger::getInstance().logFormatted(verbosity, type, fmt, arglist);
-}
-
-bool Logger::logFast(const std::string_view string)
-{
-    bool result = false;
-
-    if (Logger::isActive())
-    {
-        result = Logger::getInstance().pIoStream->push(reinterpret_cast<const uint8_t *>(string.data()), string.length(), 1);
-    }
-
-    return result;
-}
-
-bool Logger::logFastFromISR(const std::string_view string)
-{
-    bool result = false;
-
-    if (Logger::isActive())
-    {
-        result = Logger::getInstance().pIoStream->pushFromIsr(reinterpret_cast<const uint8_t *>(string.data()), string.length());
-    }
-
-    return result;
 }
 
 Logger &Logger::getInstance()
@@ -101,138 +42,113 @@ Logger &Logger::getInstance()
     return instance;
 };
 
-Logger::Logger() {}
+bool Logger::isActive()
+{
+    return (Logger::Config::isEnabledCompileTime && this->checkConfig().logging && this->pAsciiStream);
+}
 
-Logger::~Logger() {}
-
-bool Logger::logFormatted(const Logger::Verbosity &verbosity,
-                          const Logger::Type &type,
-                          const std::string_view fmt,
-                          const va_list &arglist)
+bool Logger::setAsciiStream(AsciiStream &asciiStream)
 {
     bool result = true;
 
-    if (Logger::isActive() && verbosity >= Logger::verbosityFloor)
+    if (Logger::getInstance().pAsciiStream)
     {
-        // prefix stage callbacks
-        const auto usingPrefixPrintF = [&](StringContainer &logString)
-        {
-            return this->formatPrefix(type, logString.getHead(), logString.getCharsLeft());
-        };
-        const auto itShouldAlwaysFitButIfNot_FreeItAndReprint = [&](StringContainer &logString)
-        {
-            logString.free();
-        };
-
-        // message stage callbacks
-        const auto usingMessagePrintF = [&](StringContainer &logString)
-        {
-            return vsnprintf(logString.getHead(), logString.getCharsLeft(), fmt.data(), arglist);
-        };
-        const auto ifItDoesNotFitPushPrefixPartAndReprintMessage = [&](StringContainer &logString)
-        {
-            this->pIoStream->push(reinterpret_cast<const uint8_t *>(logString.getBase()), logString.getCharsUsed(), 1);
-            logString.free(); // remove dynamic allocation
-        };
-
-        StringContainer logString;
-        if (type != Type::none)
-        {
-            if (this->printOptimallyInto(logString,
-                                         usingPrefixPrintF,
-                                         itShouldAlwaysFitButIfNot_FreeItAndReprint))
-            {
-                result = false;
-            }
-        }
-        result &= this->printOptimallyInto(logString,
-                                           usingMessagePrintF,
-                                           ifItDoesNotFitPushPrefixPartAndReprintMessage);
-
-        // push what's left
-        result &= this->pIoStream->push(reinterpret_cast<const uint8_t *>(logString.getBase()), logString.getCharsUsed(), 1);
-        logString.free(); // TODO remove dynamic allocation
+        Logger::getInstance().pAsciiStream->deinit();
     }
+
+    Logger::getInstance().pAsciiStream = &asciiStream;
+    result = Logger::getInstance().pAsciiStream->init();
 
     return result;
 }
 
-// try to print fast within optimal string lenght. If string did not fit the container - reallocate and reprint
-bool Logger::printOptimallyInto(StringContainer &stringContainer,
-                                std::function<int(StringContainer &logString)> printF,
-                                std::function<void(StringContainer &logString)> optimalPrintFailedCallbackF)
+const Logger::Config &Logger::checkConfig() { return this->config; }
+
+Logger::Config &Logger::modifyConfig() { return this->config; }
+
+int Logger::logf(const Logger::Verbosity &verbosity,
+                 const Logger::Type &type,
+                 const std::string_view fmt,
+                 const va_list &argList)
 {
-    bool result = false;
+    int charsPrinted = 0;
 
-    if (stringContainer.getCharsLeft() == 0 && false == stringContainer.allocate(Logger::optimalLogStringLength))
+    if (Logger::isActive() && verbosity >= Logger::Config::verbosityFloor)
     {
-        this->logOutOfMem();
-        return false;
-    }
-
-    int stepInNumOfChars = printF(stringContainer);
-
-    if (stepInNumOfChars > stringContainer.getCharsLeft()) // string did not fit into optimally sized container
-    {
-        optimalPrintFailedCallbackF(stringContainer);
-        if (stepInNumOfChars >= static_cast<int>(Logger::maxLogStringLength)) // string is impossible to reprint
+        if (this->config.prefix)
         {
-            this->logStringTooLong();
-            stringContainer.free();
-            stepInNumOfChars = 0;
+            charsPrinted = this->printPrefix(type);
         }
-        else // it is possible to reallocate and reprint
+
+        if (0 <= charsPrinted)
         {
-            if (false == stringContainer.allocate(stepInNumOfChars)) // allocation failed
-            {
-                this->logOutOfMem();
-                stepInNumOfChars = 0;
-            }
-            else if (printF(stringContainer)) // success - printed (unfortunately not optimally)
-            {
-                result = true;
-            }
+            int printfResult = this->pAsciiStream->printf(fmt.data(), argList);
+            charsPrinted = printfResult > 0 ? charsPrinted + printfResult : printfResult;
         }
     }
-    else // success - printed optimally
-    {
-        result = true;
-    }
-    stringContainer.step(stepInNumOfChars);
 
-    return result;
+    return charsPrinted;
 }
 
-int Logger::formatPrefix(const Logger::Type &type,
-                         char *pStringBase,
-                         const std::size_t &maxSize)
+int Logger::printPrefix(const Logger::Type &type)
 {
+
+#define ANSI_COLOR_BLACK "\e[30m"
+#define ANSI_COLOR_RED "\e[31m"
+#define ANSI_COLOR_GREEN "\e[32m"
+#define ANSI_COLOR_YELLOW "\e[33m"
+#define ANSI_COLOR_BLUE "\e[34m"
+#define ANSI_COLOR_MAGENTA "\e[35m"
+#define ANSI_COLOR_CYAN "\e[36m"
+#define ANSI_COLOR_WHITE "\e[37m"
+#define ANSI_COLOR_DEFAULT "\e[39m"
+#define ANSI_COLOR_RESET "\e[0m"
+
+#define UPTIME_FMT "%luT%02lu:%02lu:%02lu.%03lu"
+
     constexpr std::string_view types[static_cast<std::size_t>(Type::_enumTypeSize)] = {
-        nullptr,   // none
-        {"2mTRA"}, // green TRACE
-        {"5mFAT"}, // magenta FATAL
-        {"4mSYS"}, // blue SYSTEM
-        {"1mERR"}, // red ERROR
-        {"3mWAR"}, // yellow WARNING
-        {"6mINF"}, // cyan INFO
+        nullptr,
+        {ANSI_COLOR_GREEN "TRA"},
+        {ANSI_COLOR_MAGENTA "FAT"},
+        {ANSI_COLOR_BLUE "SYS"},
+        {ANSI_COLOR_RED "ERR"},
+        {ANSI_COLOR_YELLOW "WAR"},
+        {ANSI_COLOR_CYAN "INF"},
     };
 
-    std::uint32_t hours, minutes, seconds, milliseconds;
-    FibSys::getUptime(hours, minutes, seconds, milliseconds);
-    const char *pFormat = logColored ? "%02lu:%02lu:%02lu.%03lu \e[3%s\e[0m " : "%02lu:%02lu:%02lu.%03lu %s ";
-    const char *pType = types[static_cast<std::size_t>(type)].data() + (logColored ? 0 : 5);
+    std::uint32_t days, hours, minutes, seconds, milliseconds;
+    FibSys::getUptime(days, hours, minutes, seconds, milliseconds);
+    const char *pFormat = this->config.color ? UPTIME_FMT " %s" ANSI_COLOR_RESET " " : UPTIME_FMT " %s ";
+    const char *pType = types[static_cast<std::size_t>(type)].data() + (this->config.color ? 0 : 5);
 
-    return snprintf(pStringBase, maxSize, pFormat, hours, minutes, seconds, milliseconds, pType);
+    return this->pAsciiStream->printf(pFormat, days, hours, minutes, seconds, milliseconds, pType);
 }
 
-void Logger::logOutOfMem()
+extern "C" void logger_log(const char *fmt, ...)
 {
-    static constexpr std::string_view string = "\e[31mlogger out of mem\e[0m\n";
-    Logger::logFast(string);
+    va_list args;
+    va_start(args, fmt);
+    Logger::log(Logger::Verbosity::high, Logger::Type::fatal, fmt, args);
+    va_end(args);
 }
 
-void Logger::logStringTooLong()
+#if FIB_SHELL_ENABLED
+namespace ShellCommands
 {
-    static constexpr std::string_view string = "\e[31mlog entry too long\e[0m\n";
-    Logger::logFast(string);
-}
+    static Shell::Command log(
+        "log", Shell::Command::Helper::Literal::onOffUsage, nullptr, [](SHELLCMDPARAMS)
+        {
+            const char *strControlName = "logging";
+            return Shell::Command::Helper::onOffCommand(Logger::getInstance().modifyConfig().logging, strControlName, SHELLCMDARGS);
+        },
+        []()
+        {
+            static Shell::Command color(
+                log, "color", Shell::Command::Helper::Literal::onOffUsage, nullptr, [](SHELLCMDPARAMS)
+                { return Shell::Command::Helper::onOffCommand(Logger::getInstance().modifyConfig().color, "color", SHELLCMDARGS); });
+            static Shell::Command prefix(
+                log, "prefix", Shell::Command::Helper::Literal::onOffUsage, nullptr, [](SHELLCMDPARAMS)
+                { return Shell::Command::Helper::onOffCommand(Logger::getInstance().modifyConfig().prefix, "prefix", SHELLCMDARGS); });
+        });
+} // namespace ShellCommands
+#endif // #if FIB_SHELL_ENABLED

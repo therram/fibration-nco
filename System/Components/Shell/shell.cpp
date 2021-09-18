@@ -213,25 +213,21 @@ const Shell::Command *Shell::Command::findSubcommand(const char *name) const
 const Shell::Command *Shell::findCommand(std::size_t argcIn, const char *argvIn[], std::size_t &argCmdOffsetOut)
 {
     const Command *pCommand = Shell::pCommandRoot;
-    std::size_t argIt = 0;
 
     argCmdOffsetOut = 0;
 
     if (pCommand)
     {
-        if (argcIn && argvIn[argIt])
+        if (argcIn && argvIn[0])
         {
             pCommand = pCommand->findNeighbourCommand(argvIn[argCmdOffsetOut]);
-
             if (pCommand)
             {
                 while (argcIn - argCmdOffsetOut - 1)
                 {
-                    const Command *pSubcommand = pCommand->findSubcommand(argvIn[argCmdOffsetOut + 1 + argIt]);
-
+                    const Command *pSubcommand = pCommand->findSubcommand(argvIn[argCmdOffsetOut + 1]);
                     if (pSubcommand)
                     {
-                        argIt++;
                         argCmdOffsetOut++;
                         pCommand = pSubcommand;
                         continue;
@@ -265,16 +261,17 @@ Shell::Command::Result Shell::execute(const Shell::Command &command, std::size_t
         {
             if (result == Shell::Command::Result::ok)
             {
-                this->print("\n\e[32mOK\n"); // green
+                this->print("\n" ANSI_COLOR_GREEN "OK");
             }
             else if (static_cast<std::int8_t>(result) < 0)
             {
-                this->printf("\n\e[31mFAIL: %d\n", static_cast<std::int8_t>(result)); // red
+                this->printf("\n" ANSI_COLOR_RED "FAIL: %d", static_cast<std::int8_t>(result));
             }
             else if (result == Shell::Command::Result::okQuiet)
             {
                 /* nothin */
             }
+            this->print(ANSI_COLOR_RESET "\n");
         }
     }
 
@@ -301,29 +298,43 @@ Shell::Command::Result Shell::help(Shell &shell, const Shell::Command *pCommand,
 
         for (const Shell::Command *pCmdIt = pCommand; pCmdIt != nullptr; pCmdIt = pCmdIt->pNext)
         {
-            shell.print(' ', indent);
+            if (indent >= 3)
+            {
+                shell.print(' ', indent - 3);
+                // shell.print("|\n");
+                // shell.print(' ', indent - 3);
+                shell.print("`- ");
+            }
 
             int charsPrinted = 0;
-            if (pCmdIt->usage)
+
+            if (pCmdIt->name)
             {
-                charsPrinted = shell.printf("%s %s ", pCmdIt->name, pCmdIt->usage);
-            }
-            else
-            {
-                charsPrinted = shell.printf("%s  ", pCmdIt->name);
+                if (pCmdIt->usage)
+                {
+                    charsPrinted = shell.printf("%s %s ", pCmdIt->name, pCmdIt->usage);
+                }
+                else
+                {
+                    charsPrinted = shell.printf("%s  ", pCmdIt->name);
+                }
             }
 
             if (charsPrinted > 0)
             {
                 if (charsPrinted < commandColumnWidth)
                 {
-                    for (std::size_t i = commandColumnWidth - charsPrinted; i; i--)
-                    {
-                        shell.print(' ');
-                    }
+                    shell.print(' ', commandColumnWidth - charsPrinted - indent);
                 }
-                charsPrinted = shell.printf("%s\n", pCmdIt->description);
-                if (charsPrinted > 0)
+
+                if (pCmdIt->description)
+                {
+                    charsPrinted = shell.print(pCmdIt->description);
+                }
+
+                shell.print('\n');
+
+                if (charsPrinted >= 0)
                 {
                     result = Command::Result::ok;
                 }
@@ -362,7 +373,7 @@ Shell::Command Shell::helpCommand = Shell::Command(
             {
                 for (const Shell::Command *pCmdIt = Shell::pCommandRoot; pCmdIt != nullptr; pCmdIt = pCmdIt->pNext)
                 {
-                    result = Shell::help(shell, pCmdIt, 7, true);
+                    result = Shell::help(shell, pCmdIt, true, 7);
                 }
             }
             else if (argc > 1)
@@ -649,3 +660,31 @@ bool Shell::receiveChar(const char &c)
     }
     return result;
 }
+
+Shell::Command::Result Shell::Command::Helper::onOffCommand(bool &onOffControl, const char *strOnOffControlName, SHELLCMDPARAMS)
+{
+    Shell::Command::Result result = Shell::Command::Result::fail;
+
+    if (argc != 2)
+    {
+        shell.print(Literal::noArg);
+    }
+    else if (!std::strcmp(argv[1], Literal::on))
+    {
+        onOffControl = true;
+        shell.printf("%s %s %s\n", strOnOffControlName, Literal::verb, Literal::on);
+        result = Shell::Command::Result::ok;
+    }
+    else if (!std::strcmp(argv[1], Literal::off))
+    {
+        onOffControl = false;
+        shell.printf("%s %s %s\n", strOnOffControlName, Literal::verb, Literal::off);
+        result = Shell::Command::Result::ok;
+    }
+    else
+    {
+        shell.print(Literal::badArg);
+    }
+
+    return result;
+};
