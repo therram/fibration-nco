@@ -5,7 +5,7 @@
                                       / __(_) /  _______ _/ /_(_)__  ___
                                      / _// / _ \/ __/ _ `/ __/ / _ \/ _ \
                                     /_/ /_/_.__/_/  \_,_/\__/_/\___/_//_/
-                                            FOSS Modular Synth Framework
+                                                 Modular Synth Framework
 
 Open source modular synthesizer embedded software framework [WIP]
 
