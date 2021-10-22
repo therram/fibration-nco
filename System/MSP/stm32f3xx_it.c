@@ -1,100 +1,81 @@
-#include "stm32f3xx_hal.h"
+#include "system.h"
+
 #include "stm32f3xx_it.h"
+#include "stm32f3xx_hal.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "logger.h"
+#include <stdio.h>
 
 extern TIM_HandleTypeDef htim7;
 extern TIM_HandleTypeDef htim6;
-
-#define BLINK_TIME_MS 100
-#define OFF_TIME_MS 500
-
-static void errorLedInit()
-{
-    static uint8_t errorLedInitialized = 0;
-    if (!errorLedInitialized)
-    {
-        __HAL_RCC_GPIOA_CLK_ENABLE();
-        GPIO_InitTypeDef GPIO_InitStruct = {0};
-        GPIO_InitStruct.Pin = GPIO_PIN_5;
-        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-        GPIO_InitStruct.Pull = GPIO_PULLUP;
-        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET); // led off
-
-        errorLedInitialized = 1;
-    }
-}
-
-static void blinkErrorLed(uint8_t numberOfTimes)
-{
-    errorLedInit();
-    while (numberOfTimes--)
-    {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-        HAL_Delay(BLINK_TIME_MS);
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-        HAL_Delay(BLINK_TIME_MS);
-    }
-    HAL_Delay(OFF_TIME_MS);
-};
-
-enum TimesToBlinkOnFault
-{
-    TIMES_TO_BLINK_ON_HARD_FAULT = 1,
-    TIMES_TO_BLINK_ON_MEM_FAULT,
-    TIMES_TO_BLINK_ON_BUS_FAULT,
-    TIMES_TO_BLINK_ON_USAGE_FAULT,
-};
 
 // This function handles Non maskable interrupt.
 void NMI_Handler(void)
 {
 }
 
+#define HALT_IF_DEBUGGING()                                \
+    do                                                     \
+    {                                                      \
+        if ((*(volatile uint32_t *)0xE000EDF0) & (1 << 0)) \
+        {                                                  \
+            __asm("bkpt 1");                               \
+        }                                                  \
+    } while (0)
+
+// Disable optimizations for this function so "frame" argument
+// does not get optimized away
+__attribute__((optimize("O0"))) void hardFaultStackFrameDump(ExceptionStackFrame *exceptionStackFrame, char stackPointerInitial)
+{
+    // HALT_IF_DEBUGGING();
+    FIBSYS_HARDFAULT(exceptionStackFrame, stackPointerInitial);
+}
+
+#define HARDFAULT_HANDLING_ASM(_x) \
+    __asm volatile(                \
+        "tst lr, #4 \n"            \
+        "ittee eq \n"              \
+        "mrseq r0, msp \n"         \
+        "moveq r1, #77 \n"         \
+        "mrsne r0, psp \n"         \
+        "movne r1, #80 \n"         \
+        "b hardFaultStackFrameDump \n")
+
 // This function handles Hard fault interrupt.
 void HardFault_Handler(void)
 {
-    printf("HardFault_Handler\n");
-    return;
+    HARDFAULT_HANDLING_ASM();
     while (1)
     {
-        blinkErrorLed(TIMES_TO_BLINK_ON_HARD_FAULT);
     }
 }
 
 // This function handles Memory management fault.
 void MemManage_Handler(void)
 {
-    printf("MemManage_Handler\n");
+    FIBSYS_PANIC();
     while (1)
     {
-        blinkErrorLed(TIMES_TO_BLINK_ON_MEM_FAULT);
     }
 }
 
 // This function handles Pre-fetch fault, memory access fault.
 void BusFault_Handler(void)
 {
-    printf("BusFault_Handler\n");
+    FIBSYS_PANIC();
     while (1)
     {
-        blinkErrorLed(TIMES_TO_BLINK_ON_BUS_FAULT);
     }
 }
 
 // This function handles Undefined instruction or illegal state.
 void UsageFault_Handler(void)
 {
-    printf("UsageFault_Handler\n");
+    FIBSYS_PANIC();
     while (1)
     {
-        blinkErrorLed(TIMES_TO_BLINK_ON_USAGE_FAULT);
     }
 }
 

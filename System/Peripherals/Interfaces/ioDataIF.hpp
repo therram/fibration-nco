@@ -1,15 +1,20 @@
+/*
+ * Thread-safe full-duplex input/output data API for hardware peripheral such as UART.
+ *
+ * Copyright (C) 2021 Lukas Neverauskis <lukas.neverauskis@gmail.com>
+ *
+ */
+
 #pragma once
 
-#include <cstdint>
-#include <semaphore.hpp>
+#include "osResource.hpp"
 
-/**
- * @brief thread-safe generalized input/output data interface.
- */
+#include <cstdint>
+
 class IODataIF
 {
 public:
-    IODataIF() : txBinarySemaphore(true), rxBinarySemaphore(true){};
+    IODataIF(){};
     ~IODataIF(){};
 
     struct IsrTxCallbacks
@@ -21,35 +26,50 @@ public:
         virtual void onRxCompleteFromIsr(){};
     };
 
-    bool init()
+    bool init(OsResource::Context context = OsResource::Context::undefined)
     {
         bool result = false;
+
+        this->osResources.lock(portMAX_DELAY, context);
 
         if (this->isInitialized)
         {
             result = true;
         }
-        else if (false == this->initUnsafe())
-        {
-        }
-        else
+        else if (this->initUnsafe())
         {
             result = this->isInitialized = true;
         }
 
+        this->osResources.unlock(context);
+
         return result;
     }
 
-    bool tx(const std::uint8_t *pData, std::size_t size, IsrTxCallbacks *pIsrTxCallbacks = nullptr)
+    bool tx(const std::uint8_t *pData, std::size_t size, std::size_t timeout, OsResource::Context context = OsResource::Context::undefined)
     {
         bool retval = false;
 
-        this->txBinarySemaphore.Take();
+        this->osResources.tx.lock(portMAX_DELAY, context);
+
+        retval = this->txUnsafe(pData, size, timeout);
+
+        this->osResources.tx.unlock(context);
+
+        return retval;
+    }
+
+    bool txDma(const std::uint8_t *pData, std::size_t size, IsrTxCallbacks *pIsrTxCallbacks = nullptr, OsResource::Context context = OsResource::Context::undefined)
+    {
+        bool retval = false;
+
+        this->osResources.tx.lock(portMAX_DELAY, context);
+
         this->pIsrTxCallbacks = pIsrTxCallbacks;
-        if (false == txUnsafe(pData, size))
+        if (false == this->txDmaUnsafe(pData, size))
         {
-            this->txBinarySemaphore.Give();
             this->pIsrTxCallbacks = nullptr;
+            this->osResources.tx.unlock(context);
         }
         else
         {
@@ -59,48 +79,42 @@ public:
         return retval;
     }
 
-    bool txFromIsr(const std::uint8_t *pData, std::size_t size, IsrTxCallbacks *pIsrTxCallbacks = nullptr)
+    void txDmaCpltIsrCallback()
     {
-        bool retval = false;
+        BaseType_t xHigherPriorityTaskWoken = this->osResources.tx.unlock(OsResource::Context::isr);
 
-        BaseType_t xHigherPriorityTaskWoken;
-        this->txBinarySemaphore.TakeFromISR(&xHigherPriorityTaskWoken);
-        this->pIsrTxCallbacks = pIsrTxCallbacks;
-        if (false == txUnsafe(pData, size))
-        {
-            this->txBinarySemaphore.GiveFromISR(&xHigherPriorityTaskWoken);
-            this->pIsrTxCallbacks = nullptr;
-        }
-        else
-        {
-            retval = true;
-        }
-        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
-        return retval;
-    }
-
-    void txCpltIsrCalback()
-    {
-        BaseType_t xHigherPriorityTaskWoken;
-        this->txBinarySemaphore.GiveFromISR(&xHigherPriorityTaskWoken);
         if (this->pIsrTxCallbacks)
         {
             this->pIsrTxCallbacks->onTxCompleteFromIsr();
         }
-        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 
-    bool rx(std::uint8_t *pData, std::size_t size, IsrRxCallbacks *pIsrRxCallbacks = nullptr)
+    bool rx(std::uint8_t *pData, std::size_t size, std::size_t timeout, OsResource::Context context = OsResource::Context::undefined)
     {
         bool retval = false;
 
-        this->rxBinarySemaphore.Take();
+        this->osResources.rx.lock(portMAX_DELAY, context);
+
+        retval = this->rxUnsafe(pData, size, timeout);
+
+        this->osResources.rx.unlock(context);
+
+        return retval;
+    }
+
+    bool rxDma(std::uint8_t *pData, std::size_t size, IsrRxCallbacks *pIsrRxCallbacks = nullptr, OsResource::Context context = OsResource::Context::undefined)
+    {
+        bool retval = false;
+
+        this->osResources.rx.lock(portMAX_DELAY, context);
+
         this->pIsrRxCallbacks = pIsrRxCallbacks;
-        if (false == rxUnsafe(pData, size))
+        if (false == this->rxDmaUnsafe(pData, size))
         {
-            this->rxBinarySemaphore.Give();
             this->pIsrRxCallbacks = nullptr;
+            this->osResources.rx.unlock(context);
         }
         else
         {
@@ -110,41 +124,23 @@ public:
         return retval;
     }
 
-    bool rxFromIsr(std::uint8_t *pData, std::size_t size, IsrRxCallbacks *pIsrRxCallbacks = nullptr)
+    void rxDmaCpltIsrCallback()
     {
-        bool retval = false;
+        BaseType_t xHigherPriorityTaskWoken = this->osResources.rx.unlock(OsResource::Context::isr);
 
-        BaseType_t xHigherPriorityTaskWoken;
-        this->rxBinarySemaphore.TakeFromISR(&xHigherPriorityTaskWoken);
-        this->pIsrRxCallbacks = pIsrRxCallbacks;
-        if (false == rxUnsafe(pData, size))
-        {
-            this->rxBinarySemaphore.GiveFromISR(&xHigherPriorityTaskWoken);
-            this->pIsrRxCallbacks = nullptr;
-        }
-        else
-        {
-            retval = true;
-        }
-        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
-        return retval;
-    }
-
-    void rxCpltIsrCalback()
-    {
-        BaseType_t xHigherPriorityTaskWoken;
-        this->rxBinarySemaphore.GiveFromISR(&xHigherPriorityTaskWoken);
         if (this->pIsrRxCallbacks)
         {
             this->pIsrRxCallbacks->onRxCompleteFromIsr();
         }
-        // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 
-    bool deinit()
+    bool deinit(OsResource::Context context = OsResource::Context::undefined)
     {
         bool result = false;
+
+        this->osResources.lock(portMAX_DELAY, context);
 
         if (this->isInitialized)
         {
@@ -160,20 +156,44 @@ public:
             result = true;
         }
 
+        this->osResources.unlock(context);
+
         return result;
     }
 
 protected:
     virtual bool initUnsafe() = 0;
+    virtual bool txUnsafe(const std::uint8_t *pData, std::size_t size, std::size_t timeout) = 0;
+    virtual bool txDmaUnsafe(const std::uint8_t *pData, std::size_t size) = 0;
+    virtual bool rxUnsafe(std::uint8_t *pData, std::size_t size, std::size_t timeout) = 0;
+    virtual bool rxDmaUnsafe(std::uint8_t *pData, std::size_t size) = 0;
     virtual bool deinitUnsafe() = 0;
 
-    virtual bool txUnsafe(const std::uint8_t *pData, std::size_t size) = 0;
-    virtual bool rxUnsafe(std::uint8_t *pData, std::size_t size) = 0;
-
 private:
-    cpp_freertos::BinarySemaphore txBinarySemaphore;
-    cpp_freertos::BinarySemaphore rxBinarySemaphore;
     IsrRxCallbacks *pIsrRxCallbacks = nullptr;
     IsrTxCallbacks *pIsrTxCallbacks = nullptr;
+
+    struct OsResources
+    {
+        BaseType_t lock(TickType_t timeout = portMAX_DELAY, OsResource::Context context = OsResource::Context::undefined)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xHigherPriorityTaskWoken |= this->tx.lock(timeout, context);
+            xHigherPriorityTaskWoken |= this->rx.lock(timeout, context);
+            return xHigherPriorityTaskWoken;
+        }
+
+        BaseType_t unlock(OsResource::Context context = OsResource::Context::undefined)
+        {
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            xHigherPriorityTaskWoken |= this->tx.unlock(context);
+            xHigherPriorityTaskWoken |= this->rx.unlock(context);
+            return xHigherPriorityTaskWoken;
+        }
+
+        OsResource tx, rx;
+
+    } osResources;
+
     bool isInitialized = false;
 };

@@ -18,7 +18,7 @@ extern "C"
 
 extern "C" void vApplicationMallocFailedHook(void)
 {
-    FibSys::panic();
+    FIBSYS_PANIC();
 }
 
 extern "C" void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -58,7 +58,7 @@ static void SystemClock_Config(void)
     RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
     {
-        FibSys::panic();
+        FIBSYS_PANIC();
     }
     /* Initializes the CPU, AHB and APB buses clocks */
     RCC_ClkInitStruct.ClockType =
@@ -74,7 +74,7 @@ static void SystemClock_Config(void)
 
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
     {
-        FibSys::panic();
+        FIBSYS_PANIC();
     }
 
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2S | RCC_PERIPHCLK_USART3 | RCC_PERIPHCLK_USART2 | RCC_PERIPHCLK_ADC12;
@@ -84,7 +84,7 @@ static void SystemClock_Config(void)
     PeriphClkInit.I2sClockSelection = RCC_I2SCLKSOURCE_SYSCLK;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
     {
-        FibSys::panic();
+        FIBSYS_PANIC();
     }
 }
 
@@ -119,17 +119,103 @@ void FibSys::getUptime(std::uint32_t &days, std::uint32_t &hours, std::uint32_t 
     days = daysTotal;
 }
 
-void FibSys::panic()
+static void hexDumpWords(std::uint32_t address, std::size_t size, std::size_t width)
 {
-    Logger::log("\n\nsystem panic !\n"
-                "SysTick: %lu\n\n"sv,
-                FibSys::getSysTick()); // TODO does not work?!
-    vTaskDelay(cpp_freertos::Ticks::MsToTicks(1000));
-    vTaskSuspendAll();
-    taskDISABLE_INTERRUPTS();
-    while (true)
+    for (std::size_t i = 0; i < size; i += width)
     {
-    };
+        auto pAddress = reinterpret_cast<std::uint32_t *>(address) + i;
+        printf("%08lX: ", reinterpret_cast<std::uint32_t>(pAddress));
+        for (std::size_t j = 0; j < width; j++)
+            if (i + j < size)
+                printf("%08lX ", pAddress[j]);
+            else
+                printf("   ");
+        printf("\n");
+    }
+}
+
+extern "C" void fibsys_hardfault(ExceptionStackFrame *pExceptionStackFrame, char stackPointerInitial)
+{
+    printf(ANSI_COLOR_RESET "S Y S T E M   H A R D F A U L T (uptime: %lu ms)\n", FibSys::getUptimeInMs());
+    printf("%cSP frame - r0: %08lX, "
+           "r1: %08lX, "
+           "r2: %08lX, "
+           "r3: %08lX,\n"
+           "r12: %08lX, "
+           "lr: %08lX, "
+           "ret_addr %08lX, "
+           "xpsr: %08lX\n",
+           stackPointerInitial,
+           pExceptionStackFrame->r0,
+           pExceptionStackFrame->r1,
+           pExceptionStackFrame->r2,
+           pExceptionStackFrame->r3,
+           pExceptionStackFrame->r12,
+           pExceptionStackFrame->lr,
+           pExceptionStackFrame->return_address,
+           pExceptionStackFrame->xpsr);
+    const struct
+    {
+        std::uint32_t mask;
+        const char *strName;
+    } CM4_CFSR_MAP[] =
+        {
+            {SCB_CFSR_USGFAULTSR_Msk, "USGFAULTSR"},
+            {SCB_CFSR_BUSFAULTSR_Msk, "BUSFAULTSR"},
+            {SCB_CFSR_MEMFAULTSR_Msk, "MEMFAULTSR"},
+            {SCB_CFSR_MMARVALID_Msk, "MMARVALID"},
+            {SCB_CFSR_MLSPERR_Msk, "MLSPERR"},
+            {SCB_CFSR_MSTKERR_Msk, "MSTKERR"},
+            {SCB_CFSR_MUNSTKERR_Msk, "MUNSTKERR"},
+            {SCB_CFSR_DACCVIOL_Msk, "DACCVIOL"},
+            {SCB_CFSR_IACCVIOL_Msk, "IACCVIOL"},
+            {SCB_CFSR_BFARVALID_Msk, "BFARVALID"},
+            {SCB_CFSR_LSPERR_Msk, "LSPERR"},
+            {SCB_CFSR_STKERR_Msk, "STKERR"},
+            {SCB_CFSR_UNSTKERR_Msk, "UNSTKERR"},
+            {SCB_CFSR_IMPRECISERR_Msk, "IMPRECISERR"},
+            {SCB_CFSR_PRECISERR_Msk, "PRECISERR"},
+            {SCB_CFSR_IBUSERR_Msk, "IBUSERR"},
+            {SCB_CFSR_DIVBYZERO_Msk, "DIVBYZERO"},
+            {SCB_CFSR_UNALIGNED_Msk, "UNALIGNED"},
+            {SCB_CFSR_NOCP_Msk, "NOCP"},
+            {SCB_CFSR_INVPC_Msk, "INVPC"},
+            {SCB_CFSR_INVSTATE_Msk, "INVSTATE"},
+            {SCB_CFSR_UNDEFINSTR_Msk, "UNDEFINSTR"}};
+
+    printf("CFSR: %08lX (", SCB->CFSR);
+    uint8_t first = 1;
+    for (size_t i = 0; i < sizeof(CM4_CFSR_MAP) / sizeof(CM4_CFSR_MAP[0]); i++)
+    {
+        if (SCB->CFSR & CM4_CFSR_MAP[i].mask)
+        {
+            if (!first)
+            {
+                printf("|");
+            }
+            printf(CM4_CFSR_MAP[i].strName);
+            first = 0;
+        }
+    }
+    printf("), HFSR: %08lX,\nDFSR: %08lX, MMFAR: %08lX, BFAR: %08lX, AFSR: %08lX\n", SCB->HFSR, SCB->DFSR, SCB->MMFAR, SCB->BFAR, SCB->AFSR);
+    printf("process stack dump:\n");
+    hexDumpWords(__get_PSP(), 32, 4);
+    FibSys::hardwareReboot();
+}
+
+extern "C" void fibsys_panic(const char *strFile, std::uint32_t line)
+{
+    printf(ANSI_COLOR_RESET "S Y S T E M   P A N I C (uptime: %lu ms)\n", FibSys::getUptimeInMs());
+    printf("%s:%lu\n", strFile, line);
+    printf("process stack dump:\n");
+    hexDumpWords(__get_PSP(), 32, 4);
+    FibSys::hardwareReboot();
+}
+
+void FibSys::hardwareReboot()
+{
+    __NVIC_SystemReset();
+    /* shall never return ! */
 }
 
 void FibSys::boot()
@@ -145,7 +231,7 @@ FibSys::FibSys(std::uint16_t stackDepth, BaseType_t priority) : Thread("FibSys",
 {
     if (Start() == false)
     {
-        FibSys::panic();
+        FIBSYS_PANIC();
     }
 };
 
@@ -160,6 +246,14 @@ FibSys::FibSys(std::uint16_t stackDepth, BaseType_t priority) : Thread("FibSys",
 //     }
 // }
 
+Shell::Command versionCmd("version,ver", nullptr, "show firmware version", [](SHELLCMDPARAMS)
+                          {
+                              shell.printf("\nFibration %s v%u.%u.%u\n(%s, %s %s)",
+                                           Fib::Version::moduleName, Fib::Version::major, Fib::Version::minor, Fib::Version::patch,
+                                           Fib::Version::gitHash, Fib::Version::compileDate, Fib::Version::compileTime);
+                              return Shell::Command::Result::okQuiet;
+                          });
+
 //FibSys thread
 void FibSys::Run()
 {
@@ -167,10 +261,12 @@ void FibSys::Run()
     static AsciiStream textStreamUart2(ioStreamUart2);
     if (false == Logger::setAsciiStream(textStreamUart2))
     {
-        FibSys::panic();
+        FIBSYS_PANIC();
     }
-    Logger::log(Logger::Verbosity::high, Logger::Type::system, "Fibration %s v%u.%u.%u\n", Fib::Version::moduleName, Fib::Version::major, Fib::Version::minor, Fib::Version::patch);
-    Shell::start(textStreamUart2, 0x200, FibSys::Priority::appHigh);
+
+    constexpr const char *strFibShellLabel = ANSI_COLOR_BLUE "FIB> " ANSI_COLOR_YELLOW;
+    static Shell shell(strFibShellLabel, textStreamUart2, 0x200, FibSys::Priority::appHigh);
+    shell.execute(versionCmd);
 
     Periph::getAdc2().init();
     Periph::getAdc2().start();

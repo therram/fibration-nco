@@ -70,7 +70,14 @@
     "freertos.h": "c",
     "task.h": "c",
     "debug.h": "c",
-    "logger.h": "c"
+    "logger.h": "c",
+    "system.h": "c",
+    "cassert": "cpp",
+    "cfloat": "cpp",
+    "locale": "cpp",
+    "stack": "cpp",
+    "cstdbool": "cpp",
+    "stm32f3xx_hal.h": "c"
 },
   "cmake.configureOnOpen": true,
   "C_Cpp.errorSquiggles": "Enabled",

@@ -1,23 +1,27 @@
+/*
+ * STM32 UART2 instance driver 
+ *
+ * Copyright (C) 2021 Lukas Neverauskis <lukas.neverauskis@gmail.com>
+ *
+ */
+
 #pragma once
 
-#include "ioDataIF.hpp"
+#include "uartCommon.hpp"
+
 #include <cstdint>
 
-class Uart2 : public IODataIF
+class Uart2 : public UartCommon
 {
 public:
-    Uart2(std::uint32_t baudrate = 115200);
+    Uart2(std::uint32_t baudrate = UartCommon::Default::baudrate);
     ~Uart2();
 
 protected:
-    bool initUnsafe() override;
-    bool deinitUnsafe() override;
-    bool txUnsafe(const std::uint8_t *pData, std::size_t size) override;
-    bool rxUnsafe(std::uint8_t *pData, std::size_t size) override;
-
-    void operator=(Uart2 const &) = delete;
-    Uart2(Uart2 const &) = delete;
+    virtual bool initUnsafe() override;
+    virtual bool deinitUnsafe() override;
 
 private:
-    std::uint32_t baudrate;
+    void operator=(Uart2 const &) = delete;
+    Uart2(Uart2 const &) = delete;
 };

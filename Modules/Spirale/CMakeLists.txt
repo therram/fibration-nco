@@ -3,10 +3,8 @@ project(Spirale)
 
 enable_language(CXX C ASM)
 
-enable_language(C ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-# set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)
 
 set(ROOT ${CMAKE_SOURCE_DIR})
@@ -151,6 +149,7 @@ set(FIBSYS_STREAMS_SRC
 
 set(FIBSYS_COMPONENTS_SRC
     ${ROOT}/System/Components/Shell/shell.cpp
+    ${ROOT}/System/Components/Shell/commands.cpp
     ${ROOT}/System/Components/Shell/input.cpp
     ${ROOT}/System/Components/Shell/argVector.cpp
     ${ROOT}/System/Components/Shell/argBuffer.cpp
@@ -189,11 +188,15 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     # -D__FPU_PRESENT=1
     -DSTM32F303xE
     #-DSTM32F303xC
+    -DFIBSYS
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
 
+    ${ROOT}/Modules/Spirale
+
     # Fibration Framework
+    ${ROOT}
     ${ROOT}/System/
     ${ROOT}/System/DSP
     ${ROOT}/System/Config/
@@ -286,9 +289,10 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # Create hex file and print executable size
-add_custom_command(TARGET ${PROJECT_NAME}
-    POST_BUILD
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND arm-none-eabi-objcopy -O ihex ${PROJECT_NAME} ${PROJECT_NAME}.hex
     COMMAND arm-none-eabi-objcopy -O binary ${PROJECT_NAME} ${PROJECT_NAME}.bin
+    COMMAND arm-none-eabi-nm ${PROJECT_NAME} -C -n -S -s > ${PROJECT_NAME}.address-sort.nm
+    COMMAND arm-none-eabi-nm ${PROJECT_NAME} -C -S -s --size-sort > ${PROJECT_NAME}.size-sort.nm
     COMMAND arm-none-eabi-size ${PROJECT_NAME}
 )

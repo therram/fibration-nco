@@ -14,6 +14,8 @@
 #include <cstdarg>
 #include <string_view>
 #include <limits>
+#include <type_traits>
+#include <functional>
 
 using namespace std::string_view_literals;
 
@@ -28,31 +30,22 @@ using namespace std::string_view_literals;
 #define ANSI_COLOR_DEFAULT "\e[39m"
 #define ANSI_COLOR_RESET "\e[0m"
 
+template <typename T>
+std::underlying_type_t<T> enumEval(T enumVal)
+{
+    return static_cast<std::underlying_type_t<T>>(enumVal);
+}
+
 class Shell : public cpp_freertos::Thread
 {
 public:
     struct Config
     {
-        // prompt in blue, command entry in yellow
-        static constexpr std::string_view prompt = ANSI_COLOR_BLUE "FIB> " ANSI_COLOR_YELLOW ""sv;
         static constexpr std::size_t printfBufferSize = 256;
-        static constexpr bool printEndLineCR = false;
-        static constexpr bool printEndLineLF = true;
         static constexpr bool regularResponseIsEnabled = true;
-
-        static_assert(printEndLineLF || printEndLineLF, "no end-line configured!");
-
         bool coloredOutput = true;
     } config;
 
-    static void start(AsciiStream &asciiStream, std::uint16_t stackDepth, BaseType_t priority);
-
-    void print(const char &c, std::size_t timesToRepeat = 1);
-    void printUnformatted(const char *pData, const std::size_t len, std::size_t timesToRepeat = 1);
-    void printEOL();
-
-    int print(const char *str, std::size_t timesToRepeat = 1);
-    int printf(const char *fmt, ...);
     class Command
     {
     public:
@@ -74,11 +67,14 @@ public:
 #define SHELLCMDPARAMS Shell &shell, std::size_t argc, const char *argv[]
 #define SHELLCMDARGS shell, argc, argv
 
-        using CtorCallbackF = void(void); // method for constructing subcommands
-        using CommandF = Result(SHELLCMDPARAMS);
+        Command(const char *name, const char *usage, const char *description,
+                std::function<Result(SHELLCMDPARAMS)> commandF, std::function<void()> ctorCallbackF = nullptr);
 
-        Command(const char *name, const char *usage = "", const char *description = "", CommandF commandF = nullptr, CtorCallbackF ctorCallbackF = nullptr);
-        Command(Command &parent, const char *name, const char *usage = "", const char *description = "", CommandF commandF = nullptr, CtorCallbackF ctorCallbackF = nullptr);
+        Command(Command &parent, const char *name, const char *usage, const char *description,
+                std::function<Result(SHELLCMDPARAMS)> commandF, std::function<void()> ctorCallbackF = nullptr);
+
+        Command(const char *name, std::function<Result(SHELLCMDPARAMS)> commandF);
+
         const Command *findNeighbourCommand(const char *name) const;
         const Command *findSubcommand(const char *name) const;
 
@@ -87,8 +83,9 @@ public:
         const char *name = nullptr;
         const char *usage = nullptr;
         const char *description = nullptr;
-        const CommandF *commandF = nullptr;
+        const std::function<Result(SHELLCMDPARAMS)> commandF = nullptr;
 
+        // TODO maybe move to other file (namespace CommandHelpers, etc.)
         struct Helper
         {
             struct Literal
@@ -101,6 +98,7 @@ public:
                 static constexpr const char *off = "off";
             };
 
+            static Result onOffCommand(std::function<bool(bool)> onOffF, const char *strOnOffControlName, SHELLCMDPARAMS);
             static Result onOffCommand(bool &onOffControl, const char *strOnOffControlName, SHELLCMDPARAMS);
         };
 
@@ -113,41 +111,62 @@ public:
         friend Shell;
     };
 
-    static const Shell::Command *findCommand(std::size_t argcIn, const char *argvIn[], std::size_t &argCmdOffsetOut);
-    static Command::Result help(Shell &shell, const Shell::Command *pCommand, bool recurse = false, const std::size_t maxDepth = 1, std::size_t depth = 0, std::size_t indent = 0);
-    static Command helpCommand;
+    Shell(const char *strPromptLabel, AsciiStream &asciiStream, std::uint16_t stackDepth, BaseType_t priority, Command *pCommandRoot = Shell::pCommandGlobalRoot);
+
+    void print(const char &c, std::size_t timesToRepeat = 1);
+    int print(const char *str, std::size_t timesToRepeat = 1);
+    void printUnformatted(const char *pData, const std::size_t len, std::size_t timesToRepeat = 1);
+    int printf(const char *fmt, ...);
+
+    const Shell::Command *findCommand(std::size_t argcIn, const char *argvIn[], std::size_t &argCmdOffsetOut);
 
     Command::Result execute(const Command &command, std::size_t argc, const char *argv[], const char *outputColorEscapeSequence = "\e[32m"); // default in green
     Command::Result execute(const Command &command, const char *strArgs = nullptr, const char *outputColorEscapeSequence = "\e[33m");
 
-private:
-    Shell(AsciiStream &asciiStream, std::uint16_t stackDepth, BaseType_t priority);
+    static Command::Result help(Shell &shell, const Shell::Command *pCommand, bool recurse = false, const std::size_t maxDepth = 1, std::size_t depth = 0, std::size_t indent = 0);
+    static Command helpCommand;
 
+private:
     virtual void Run() override;
 
-    bool escape(const char &c);
-    bool backspaceChar();
-    bool insertChar(const char &c);
+    bool receiveChar(const char &c);
     bool lineFeed();
 
-    bool receiveChar(const char &c);
+    bool handleEscape(const char &c);
+    bool handleAnsiEscape(const char &c);
+    bool handleAnsiDelimitedEscape(const char &c);
+    bool handleAnsiDelimitedDelEscape(const char &c);
+    bool deleteChar();
+    bool onHomeKey();
+    bool onArrowUpKey();
+    bool onArrowDownKey();
+    bool onArrowRightKey();
+    bool onArrowLeftKey();
+
+    bool backspaceChar();
+    bool insertChar(const char &c);
+
     void promptNew();
     void printPrompt();
 
-    bool visualCursorStep();
-    bool visualCursorStepBack();
+    enum class EscapeState : std::int8_t
+    {
+        failed = -1,
+        none = 0,
+        escaped,
+        delimited,
+        intermediate,
+        finished,
+    } escapeState;
 
-    bool cursorStep();
-    bool cursorStepBack();
-
-    bool deleteChar();
-
-    bool processAnsiCursorControl(const char &c);
-    bool processAnsiEscapeSequences(const char &c);
+    std::uint32_t escapeTick;
 
     Input input;
     bool isPrompted = true;
-    static Command *pCommandRoot;
 
+    const char *strPromptLabel;
     AsciiStream &asciiStream;
+    Command *pCommandRoot = nullptr;
+
+    static Command *pCommandGlobalRoot;
 };
