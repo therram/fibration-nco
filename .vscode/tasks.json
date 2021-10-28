@@ -7,11 +7,20 @@
                 "command": "./Utils/reset-stlink.sh"
             },
             "presentation": {
-                "focus": true,
-                "panel": "dedicated",
-                // "revealProblems": "onProblem"
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Reset target over ST-LINK",
+            "type": "shell",
+            "linux": {
+                "command": "./Utils/reset-target.sh"
             },
-            "problemMatcher": []
+            "presentation": {
+                "focus": false,
+                "panel": "shared"
+            }
         },
         {
             "label": "Serial /dev/serial0 [RPI4 UART]",
@@ -21,8 +30,7 @@
             },
             "presentation": {
                 "focus": true,
-                "panel": "dedicated",
-                // "revealProblems": "onProblem"
+                "panel": "dedicated"
             }
         },
         {
@@ -33,8 +41,7 @@
             },
             "presentation": {
                 "focus": true,
-                "panel": "dedicated",
-                // "revealProblems": "onProblem"
+                "panel": "dedicated"
             },
             "problemMatcher": []
         },
@@ -45,9 +52,6 @@
             "linux": {
                 "command": "./Utils/build.sh Debug",
                 "problemMatcher": "$gcc"
-            },
-            "presentation": {
-                // "revealProblems": "onProblem"
             }
         },
         {
@@ -57,9 +61,6 @@
             "linux": {
                 "command": "./Utils/build.sh Debug -r",
                 "problemMatcher": "$gcc"
-            },
-            "presentation": {
-                // "revealProblems": "onProblem"
             }
         },
         {
@@ -72,9 +73,6 @@
             "linux": {
                 "command": "./Utils/build.sh Release",
                 "problemMatcher": "$gcc"
-            },
-            "presentation": {
-                // "revealProblems": "onProblem"
             }
         },
         {
@@ -84,31 +82,73 @@
             "linux": {
                 "command": "./Utils/build.sh Release -r",
                 "problemMatcher": "$gcc"
-            },
-            "presentation": {
-                // "revealProblems": "onProblem"
             }
         },
         {
-            "label": "Build and Flash Spirale [Debug]",
+            "label": "Build and Flash Higgs [Debug]",
             "type": "shell",
             "group": "test",
             "linux": {
-                "command": "./Utils/flash.sh Spirale Debug -r -b"
-            }
+                "command": "./Utils/flash.sh Higgs Debug -r -b"
+            },
         },
         {
-            "label": "Build and Flash Spirale [Release]",
+            "label": "Build and Flash Higgs [Release]",
             "type": "shell",
             "group": {
                 "kind": "test",
                 "isDefault": true
             },
             "linux": {
-                "command": "./Utils/flash.sh Spirale Release -r -b"
+                "command": "./Utils/flash.sh Higgs Release -r -b"
             },
             "presentation": {
                 "focus": true
+            }
+        },
+        {
+            "label": "Open Git Bash in terminal view 1",
+            "type": "shell",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "linux": {
+                "command": "bash"
+            },
+            "presentation": {
+                "focus": true,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Open Git Bash in terminal view 2",
+            "type": "shell",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "linux": {
+                "command": "bash"
+            },
+            "presentation": {
+                "focus": true,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Open Git Bash in terminal view 3",
+            "type": "shell",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "linux": {
+                "command": "bash"
+            },
+            "presentation": {
+                "focus": true,
+                "panel": "shared"
             }
         }
     ],

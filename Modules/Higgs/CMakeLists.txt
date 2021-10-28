@@ -1,5 +1,5 @@
 
-project(Spirale)
+project(Higgs)
 
 enable_language(CXX C ASM)
 
@@ -109,6 +109,7 @@ set(FIBSYS_CORE_SRC
 
 set(FIBSYS_DSP_SRC
     ${ROOT}/System/DSP/map.cpp
+    ${ROOT}/System/DSP/oscillator.cpp
 )
 
 set(FIBSYS_UTILITIES_SRC
@@ -193,7 +194,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
 
-    ${ROOT}/Modules/Spirale
+    ${ROOT}/Modules/Higgs
 
     # Fibration Framework
     ${ROOT}
