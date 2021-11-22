@@ -1,69 +1,52 @@
 #!/bin/bash
+
 set -e 
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-
-# configs
-STM32_IMAGE_BASE=0x08000000
-
-# Regular Colors
-Color_Off='\033[0m'       # Text Reset
-Black='\033[0;30m'        # Black
-Red='\033[0;31m'          # Red
-Green='\033[0;32m'        # Green
-Yellow='\033[0;33m'       # Yellow
-Blue='\033[0;34m'         # Blue
-Purple='\033[0;35m'       # Purple
-Cyan='\033[0;36m'         # Cyan
-White='\033[0;37m'        # White
+# ANSI colors
+colorReset='\033[0m'
+colorBlack='\033[0;30m'
+colorRed='\033[0;31m'
+colorGreen='\033[0;32m'
+colorYellow='\033[0;33m'
+colorBlue='\033[0;34m'
+colorPurple='\033[0;35m'
+colorCyan='\033[0;36m'
+colorWhite='\033[0;37m'
 
 # configs
 BUILD_DIR="Build"
 
-if [ $# -eq 0 ]; then 
-    printf "${Yellow}usage: $0 <PROJECT> <Debug|Release> [-r] [-b]\n"
-    printf "\t-r\t ${Green}to reset after flashing\n"
-    printf "\t-r\t ${Green}to prebuild the project target\n"
-    exit -1;
+print_usage() {
+    printf "${colorYellow}usage: $0 <PROJECT> <Debug|Release> [-b]\n"
+    printf "\t${colorYellow}-b\t ${colorGreen}to prebuild the project target\n"
+}
+
+if [ $# -eq 0 ]; then
+    print_usage
 fi
 
 PROJECT=$1
 TARGET=$2
-RESET_FLAG=$3
-BUILD_FLAG=$4
+FLAG_BUILD=$3
 
-[[ ! -f $(command -v st-flash) ]] && printf "${Red}no 'st-flash' to to flash with\n" && exit -2
-[[ ! -f $(command -v st-info) ]] && printf "${Red}no 'st-info' to to get device info with\n" && exit -3
+EXEC_TO_CHECK="openocd"
+[[ ! -f $(command -v $EXEC_TO_CHECK) ]] && 
+    printf "${colorRed}no '$EXEC_TO_CHECK' executable\n" && exit -2
 
-[[ $TARGET == "Debug" || $TARGET == "Release" ]] || ( printf "${Red}bad target\n"; exit -4 )
+[[ $TARGET == "Debug" || $TARGET == "Release" ]] || 
+    ( printf "${colorRed}bad target ${colorPurple}$TARGET\n"; exit -3 )
 
-[[ $BUILD_FLAG == "-b" ]] && $SCRIPT_DIR/build.sh $TARGET
-[ $? -ne 0 ] && exit -5
+[[ $FLAG_BUILD == "-b" ]] && (Utils/build.sh $PROJECT $TARGET || exit -4 )
 
 PROJECT_DIR="$BUILD_DIR/$TARGET/Modules/$PROJECT"
-[[ ! -d $PROJECT_DIR ]] && ( printf "${Red}project ${Purple}$PROJECT ${Red}does not exist or not built\n"; exit -6 )
+[[ ! -d $PROJECT_DIR ]] && 
+    ( printf "${colorRed}project ${colorPurple}$PROJECT ${colorRed}does not exist or not built\n"; exit -5 )
 
-BINARY_PATH="$PROJECT_DIR/$PROJECT.bin"
-[[ ! -f $BINARY_PATH ]] && ( printf "${Red}project ${Purple}$PROJECT ${Red}binary does not exist or not built\n"; exit -7 )
+ELF_PATH="$PROJECT_DIR/$PROJECT"
+[[ ! -f $ELF_PATH ]] && 
+    ( printf "${colorRed}project ${colorPurple}$PROJECT ${colorRed}ELF file does not exist or not built\n"; exit -6 )
 
-printf "${Yellow}\nst-info:\n"
-printf "  ${Yellow}version  ${Cyan}" ; st-info --version
-printf "  ${Yellow}flash    ${Cyan}" ; st-info --flash
-printf "  ${Yellow}sram     ${Cyan}" ; st-info --sram
-printf "  ${Yellow}descr    ${Cyan}" ; st-info --descr
-printf "  ${Yellow}pagesize ${Cyan}" ; st-info --pagesize
-printf "  ${Yellow}chipid   ${Cyan}" ; st-info --chipid
-printf "  ${Yellow}serial   ${Cyan}" ; st-info --serial
-printf "  ${Yellow}serial   ${Cyan}" ; st-info --hla-serial
+printf "${colorYellow}flashing image from ELF: ${colorPurple}$ELF_PATH\n"
 
-printf "${Yellow}\nflashing image ${Purple}$BINARY_PATH\n${Cyan}"
-st-flash write $BINARY_PATH $STM32_IMAGE_BASE
-[ $? -eq 0 ] && printf "${Green}flashed successfully !\n" || printf "${Red}flashing failed\n" 
-
-if [[ $RESET_FLAG == "-r" ]]; then
-    printf "${Yellow}\nresetting the flashed ${Purple}"; st-info --descr
-    printf "${Cyan}"
-    st-flash reset
-    [ $? -eq 0 ] && printf "${Green}reset successfully !\n" || printf "${Red}reset failed\n" 
-fi
-
+openocd -c "set TARGET $TARGET" -f "Modules/$PROJECT/openocd.cfg" -c "exit" \
+    && printf "${colorGreen}flashed successfully !\n" || printf "${colorRed}flashing failed\n" 
